@@ -8,9 +8,12 @@ import numpy as np
 from scipy.sparse import hstack
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import codecs
 from sklearn.externals import joblib
 import xgboost as xgb
 from gensim.models import Word2Vec
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import accuracy_score
 """
 这个算是结构预测
 解题思路1：分解大法
@@ -32,6 +35,7 @@ from gensim.models import Word2Vec
 
 reload(sys)
 sys.setdefaultencoding('utf-8')
+jieba.load_userdict('./corpus/user_dict.txt')
 
 
 def get_data_path():
@@ -95,13 +99,25 @@ def encode_answer(answer):
     return 1
 
 
+def del_stopwordslist(segs):
+    stopwords = [
+        line.strip()
+        for line in codecs.open('./corpus/stopwords.txt', 'r', 'utf-8')
+        .readlines()
+    ]
+    segs = [word for word in list(segs) if word not in stopwords]
+    return segs
+
+
 # 将数据转换成可训练的格式
-def trans_data(origin_json, classifyf, laterprocessf, is_test=False):
+def trans_data(origin_json, classifyf, laterprocessf, corpusf, is_test=False):
     f_train = get_data_path() + origin_json
     f_train_classify = get_data_path() + classifyf
     f_train_laterprocess = get_data_path() + laterprocessf
+    f_train_corpus = get_data_path() + corpusf
     with open(f_train, 'rb') as rf, open(f_train_classify, 'wb') as wf1, open(
-            f_train_laterprocess, 'wb') as wf2:
+            f_train_laterprocess, 'wb') as wf2, open(f_train_corpus,
+                                                     'wb') as wf3:
         line = rf.readline()
         while line:
             json_line = json.loads(line)
@@ -112,8 +128,8 @@ def trans_data(origin_json, classifyf, laterprocessf, is_test=False):
             alternatives = [
                 s.strip() for s in json_line['alternatives'].split('|')
             ]
-            seg_passage = ' '.join(jieba.cut(passage))
-            seg_query = ' '.join(jieba.cut(query))
+            seg_passage = ' '.join(del_stopwordslist(jieba.cut(passage)))
+            seg_query = ' '.join(del_stopwordslist(jieba.cut(query)))
 
             dict_alternatives = {}
             for a in alternatives:
@@ -127,6 +143,10 @@ def trans_data(origin_json, classifyf, laterprocessf, is_test=False):
                     dict_alternatives))
             else:
                 wf2.write(line)
+
+            wf3.write('{}\n'.format(seg_passage))
+            wf3.write('{}\n'.format(seg_query))
+
             line = rf.readline()
 
 
@@ -188,22 +208,21 @@ def model_tfidf():
     X_train_passage, X_val_passage, X_train_query, X_val_query, y_train, y_val = load_classifytraindata(
         trainf, valf)
 
-    # print ('tfidf begin')
-    # tv_passage = TfidfVectorizer(max_features=100000)
-    # tv_query = TfidfVectorizer(max_features=50000)
+    print('tfidf begin')
+    tv_passage = TfidfVectorizer(max_features=100000)
+    tv_query = TfidfVectorizer(max_features=50000)
 
-    # X_train_passage = tv_passage.fit_transform(X_train_passage)
-    # X_val_passage = tv_passage.transform(X_val_passage)
+    X_train_passage = tv_passage.fit_transform(X_train_passage)
+    X_val_passage = tv_passage.transform(X_val_passage)
 
-    # X_train_query = tv_query.fit_transform(X_train_query)
-    # X_val_query = tv_query.transform(X_val_query)
+    X_train_query = tv_query.fit_transform(X_train_query)
+    X_val_query = tv_query.transform(X_val_query)
 
-    # joblib.dump(tv_passage, './models/tv_passage.pkl')
-    # joblib.dump(tv_query, './models/tv_query.pkl')
-    # print('tfidf end')
+    joblib.dump(tv_passage, './models/tv_passage.pkl')
+    joblib.dump(tv_query, './models/tv_query.pkl')
+    print('tfidf end')
 
-
-    print ('word2vec begin')
+    print('word2vec begin')
 
     print('word2vec end')
 
@@ -235,10 +254,20 @@ def model_tfidf():
     # X_val = X_val_passage
 
     # train-merror:0.273466	valid-merror:0.356084
-    X_train = hstack((X_train_passage,X_train_query))
-    X_val = hstack((X_val_passage,X_val_query))
+    X_train = hstack((X_train_passage, X_train_query))
+    X_val = hstack((X_val_passage, X_val_query))
 
     print('combine feature end')
+
+    print('mnb begin')
+    model_NB = MultinomialNB()
+    model_NB.fit(X_train, y_train)
+    pred_train = model_NB.predict(X_train)
+    pred_val = model_NB.predict(X_val)
+    print('the acc is {}'.format(accuracy_score(y_train, pred_train)))
+    print('the acc is {}'.format(accuracy_score(y_val, pred_val)))
+
+    print('mnb end')
 
     d_train = xgb.DMatrix(X_train, label=y_train)
     d_val = xgb.DMatrix(X_val, label=y_val)
@@ -262,6 +291,12 @@ def model_tfidf():
         early_stopping_rounds=50,
         verbose_eval=2)
     bst.save_model('./models/xgb_classify.model')
+
+    xgb_pred_train=bst.predict(d_train)
+    xgb_pred_val=bst.predict(d_val)
+
+    print('the acc is {}'.format(accuracy_score(y_train, xgb_pred_train)))
+    print('the acc is {}'.format(accuracy_score(y_val, xgb_pred_val)))
 
     # 将分错的数据单独写入文件
 
@@ -325,8 +360,10 @@ if __name__ == '__main__':
     # get_databasis_sta()
     # trans_data('ai_challenger_oqmrc_trainingset.json',
     #            'oqmrc_trainingset_classify.csv',
-    #            'oqmrc_trainingset_laterprocess.csv')
+    #            'oqmrc_trainingset_laterprocess.csv',
+    #            'oqmrc_trainingset_corpus.csv')
     # trans_data('ai_challenger_oqmrc_validationset.json',
     #            'oqmrc_validationset_classify.csv',
-    #            'oqmrc_validationset_laterprocess.csv')
+    #            'oqmrc_validationset_laterprocess.csv',
+    #            'oqmrc_validationset_corpus.csv')
     train_combine()
