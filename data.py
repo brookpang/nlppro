@@ -1,15 +1,33 @@
+# -*- coding:utf-8 -*-
 
 import os
 import numpy as np
 import torch
 import csv
+from sklearn.preprocessing import normalize
+from gensim.models.keyedvectors import KeyedVectors
+
 
 import sys
 reload(sys)
 sys.setdefaultencoding('utf-8')
 
+model_file_name = 'corpus/w2v.model.bin'
 
-def get_batch(batch, word_vec, emb_dim=300):
+def load_word2vec():
+    train_w2v = KeyedVectors.load_word2vec_format(model_file_name, binary=True)
+    return train_w2v
+
+train_w2v=load_word2vec()
+# word_vec=load_word2vec()
+def get_vacabandsize():
+    # model_file_name = './corpus/w2v.model.bin'
+    # train_w2v = KeyedVectors.load_word2vec_format(model_file_name, binary=True)
+    return len(train_w2v.vocab),train_w2v.vector_size
+
+
+
+def get_batch(batch, emb_dim=300):
     # sent in batch in decreasing order of lengths (bsize, max_len, word_dim)
     lengths = np.array([len(x) for x in batch])
     max_len = np.max(lengths)
@@ -17,56 +35,30 @@ def get_batch(batch, word_vec, emb_dim=300):
 
     for i in range(len(batch)):
         for j in range(len(batch[i])):
-            embed[j, i, :] = word_vec[batch[i][j]]
+            embed[j, i, :] = train_w2v[batch[i][j]]
 
     return torch.from_numpy(embed).float(), lengths
 
-
-def get_word_dict(sentences):
-    # create vocab of words
-    word_dict = {}
-    for sent in sentences:
-        for word in sent.split():
-            if word not in word_dict:
-                word_dict[word] = ''
-    word_dict['<s>'] = ''
-    word_dict['</s>'] = ''
-    word_dict['<p>'] = ''
-    return word_dict
-
-
-def get_glove(word_dict, glove_path):
-    # create word_vec with glove vectors
-    word_vec = {}
-    with open(glove_path) as f:
-        for line in f:
-            word, vec = line.split(' ', 1)
-            if word in word_dict:
-                word_vec[word] = np.array(list(map(float, vec.split())))
-    print('Found {0}(/{1}) words with glove vectors'.format(
-                len(word_vec), len(word_dict)))
-    return word_vec
-
-
-def build_vocab(sentences, glove_path):
-    word_dict = get_word_dict(sentences)
-    word_vec = get_glove(word_dict, glove_path)
-    print('Vocab size : {0}'.format(len(word_vec)))
-    return word_vec
+# 将seq中的词转成向量
+def word2vec_seq(seq, word2vec):
+    transformed_seq = []
+    word_embedding_size = word2vec.syn0.shape[1]
+    for word in seq:
+        try:
+            word_arr = word2vec[word]
+            new_word_arr = normalize(word_arr.reshape(1, -1), copy=True)
+            transformed_seq.append(new_word_arr.reshape(word_embedding_size))
+        except KeyError, e:
+            print('keyerror')
+    return transformed_seq
 
 
 def get_data_path():
-    return "/home/brook/work/nlppro/data/"
+    return "data/"
 
 
-def load_word2vec():
-    from gensim.models.keyedvectors import KeyedVectors
-    model_file_name = './corpus/w2v.model.bin'
-    train_w2v = KeyedVectors.load_word2vec_format(model_file_name, binary=True)
-    return train_w2v
-
+# train_w2v = load_word2vec()
 def trans_textlist(X_text_arr):
-    train_w2v = load_word2vec()
     # return np.array([['<s>'] +[word for word in sent.split(' ') if word in train_w2v] +['</s>'] for sent in X_text_arr])
     return np.array([[word for word in sent.decode('utf-8').split(' ') if word in train_w2v] for sent in X_text_arr])
 
