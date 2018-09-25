@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
+from unet_model import UNet
 
 """
 Main module for Natural Language Inference
@@ -32,8 +33,10 @@ class NLINet(nn.Module):
                 nn.Dropout(p=self.dpout_fc),
                 nn.Linear(self.inputdim, self.fc_dim),
                 nn.Tanh(),
+                # nn.ReLU(),
                 nn.Dropout(p=self.dpout_fc),
                 nn.Linear(self.fc_dim, self.fc_dim),
+                # nn.ReLU(),
                 nn.Tanh(),
                 nn.Dropout(p=self.dpout_fc),
                 nn.Linear(self.fc_dim, self.n_classes),
@@ -45,12 +48,19 @@ class NLINet(nn.Module):
                 nn.Linear(self.fc_dim, self.n_classes)
                 )
 
+        # self.classifier= UNet(n_channels=1, n_classes=self.n_classes)
+
     def forward(self, s1, s2):
         # s1 : (s1, s1_len)
         u = self.encoder(s1)
         v = self.encoder(s2)
 
         features = torch.cat((u, v, torch.abs(u-v), u*v), 1)
+
+        # print features.size()
+        # for unet
+        # features=features.view(features.size()[0],1,32,32)
+        # print features.size()
         output = self.classifier(features)
         return output
 
@@ -110,6 +120,7 @@ class InferSent(nn.Module):
         sent_packed = nn.utils.rnn.pack_padded_sequence(sent, sent_len_sorted)
         sent_output = self.enc_lstm(sent_packed)[0]  # seqlen x batch x 2*nhid
         sent_output = nn.utils.rnn.pad_packed_sequence(sent_output)[0]
+        # print(sent_output.data.shape)
 
         # Un-sort by length
         idx_unsort = torch.from_numpy(idx_unsort).cuda() if self.is_cuda() \
@@ -128,6 +139,7 @@ class InferSent(nn.Module):
             if emb.ndimension() == 3:
                 emb = emb.squeeze(0)
                 assert emb.ndimension() == 2
+
 
         return emb
 

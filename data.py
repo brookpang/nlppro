@@ -65,6 +65,8 @@ def trans_textlist(X_text_arr):
 
 
 def load_classifytraindata(trainf, valf):
+    query_id_train=[]
+    query_id_val=[]
     X_train_passage = []
     X_val_passage = []
     X_train_query = []
@@ -81,6 +83,7 @@ def load_classifytraindata(trainf, valf):
             X_train_passage.append(seg_passage)
             X_train_query.append(seg_query)
             y_train.append(int(label))
+            query_id_train.append(query_id)
 
         for line in rd2:
             query_id, label, seg_passage, seg_query, dict_alternatives = tuple(
@@ -88,5 +91,6 @@ def load_classifytraindata(trainf, valf):
             X_val_passage.append(seg_passage)
             X_val_query.append(seg_query)
             y_val.append(int(label))
+            query_id_val.append(query_id)
 
-    return trans_textlist(X_train_passage),trans_textlist( X_val_passage),trans_textlist( X_train_query), trans_textlist(X_val_query),np.array(y_train), np.array(y_val)
+    return query_id_train,query_id_val,trans_textlist(X_train_passage),trans_textlist( X_val_passage),trans_textlist( X_train_query), trans_textlist(X_val_query),np.array(y_train), np.array(y_val)

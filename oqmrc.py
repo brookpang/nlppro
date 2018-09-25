@@ -53,6 +53,7 @@ def get_databasis_sta():
 
     dict_alternatives = {}
     dict_answers = {}
+    passage_lens=[]
     with open(f_train, 'rb') as rf:
         line = rf.readline()
         while line:
@@ -60,9 +61,11 @@ def get_databasis_sta():
             passage = json_line['passage']
             query = json_line['query']
             answer = json_line['answer'].strip()
-            query_id = json_line['query_id'].strip()
+            query_id = json_line['query_id']
             alternatives = frozenset(
                 [s.strip() for s in json_line['alternatives'].split('|')])
+            # if len(alternatives)==1:
+            #     print query_id,json_line['alternatives']
             if dict_alternatives.has_key(alternatives):
                 dict_alternatives[alternatives] += 1
             else:
@@ -72,17 +75,28 @@ def get_databasis_sta():
                 dict_answers[answer] += 1
             else:
                 dict_answers[answer] = 1
+            passage_lens.append(len(passage))
+            # if len(passage)>500 :
+            #     print passage,answer
             line = rf.readline()
 
-    f_alternatives_sta = get_data_path() + 'alternatives_sta.txt'
-    with open(f_alternatives_sta, 'wb') as wf:
-        for k, v in dict_alternatives.iteritems():
-            wf.write("{}\t{}\t{}\n".format('|'.join(k), v, len(k)))
+    # 统计长度
+    # passage_lens=np.sort(np.array(passage_lens))
+    # print passage_lens
+    # print(np.max(passage_lens),np.min(passage_lens),np.median(passage_lens),np.percentile(passage_lens,98),np.percentile(passage_lens,5))
+    # print(np.sum(passage_lens>350))
+    # print(np.sum(passage_lens==19))
 
-    f_answers_sta = get_data_path() + 'answers_sta.txt'
-    with open(f_answers_sta, 'wb') as wf:
-        for k, v in dict_answers.iteritems():
-            wf.write("{}\t{}\n".format(k, v))
+
+    # f_alternatives_sta = get_data_path() + 'alternatives_sta.txt'
+    # with open(f_alternatives_sta, 'wb') as wf:
+    #     for k, v in dict_alternatives.iteritems():
+    #         wf.write("{}\t{}\t{}\n".format('|'.join(k), v, len(k)))
+
+    # f_answers_sta = get_data_path() + 'answers_sta.txt'
+    # with open(f_answers_sta, 'wb') as wf:
+    #     for k, v in dict_answers.iteritems():
+    #         wf.write("{}\t{}\n".format(k, v))
 
 
 def encode_answer(answer):
@@ -136,7 +150,7 @@ def trans_data(origin_json, classifyf, laterprocessf, corpusf, is_test=False):
                 answer_code = encode_answer(a)
                 dict_alternatives[a] = answer_code
 
-            if len(set(dict_alternatives.values())) == 3:
+            if len(set(dict_alternatives.values())) == 3 and len(passage)<=350:
                 label = dict_alternatives[answer]
                 wf1.write('{}\t{}\t{}\t{}\t{}\n'.format(
                     query_id, label, seg_passage, seg_query,
@@ -209,8 +223,8 @@ def model_tfidf():
         trainf, valf)
 
     print('tfidf begin')
-    tv_passage = TfidfVectorizer(max_features=100000)
-    tv_query = TfidfVectorizer(max_features=50000)
+    tv_passage=TfidfVectorizer(ngram_range=(1,2),min_df=3, max_df=0.9, use_idf=1,smooth_idf=1, sublinear_tf=1,max_features=70000)
+    tv_query=TfidfVectorizer(ngram_range=(1,2),min_df=3, max_df=0.9, use_idf=1,smooth_idf=1, sublinear_tf=1,max_features=30000)
 
     X_train_passage = tv_passage.fit_transform(X_train_passage)
     X_val_passage = tv_passage.transform(X_val_passage)
@@ -357,7 +371,7 @@ def submit():
 
 
 if __name__ == '__main__':
-    # get_databasis_sta()
+    get_databasis_sta()
     # trans_data('ai_challenger_oqmrc_trainingset.json',
     #            'oqmrc_trainingset_classify.csv',
     #            'oqmrc_trainingset_laterprocess.csv',
@@ -366,4 +380,4 @@ if __name__ == '__main__':
     #            'oqmrc_validationset_classify.csv',
     #            'oqmrc_validationset_laterprocess.csv',
     #            'oqmrc_validationset_corpus.csv')
-    train_combine()
+    # train_combine()
