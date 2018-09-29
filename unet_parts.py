@@ -75,7 +75,8 @@ class outconv(nn.Module):
         super(outconv, self).__init__()
         self.conv = nn.Conv2d(in_ch, out_ch, 1)
         self.out = nn.Sequential(
-            nn.Linear(3072, 3)
+            nn.Linear(3072, 128),
+            nn.Tanh()
             )
 
     def forward(self, x):

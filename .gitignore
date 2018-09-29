@@ -24,3 +24,4 @@ corpus/w2v.model.bin
 *.log
 *.sh
 *.pickle
+*.model

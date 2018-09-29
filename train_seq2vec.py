@@ -17,7 +17,7 @@ from torch import optim
 from torch.autograd import Variable
 from nnmodel import NLINet
 from data import get_vacabandsize
-from data import load_classifytraindata, get_data_path, get_batch
+from data import load_classifytraindata,load_classifytraindata2, get_data_path, get_batch
 
 # model_file_name = './corpus/w2v.model.bin'
 
@@ -28,6 +28,8 @@ parser.add_argument('--no-cuda', action='store_true', default=False,help='enable
 
 args=parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print args.cuda
 print args.n_epochs
@@ -53,7 +55,7 @@ params = {
     'n_enc_layers': 1,
     'dpout_model': 0.5,
     'dpout_fc': 0.5,
-    'fc_dim': 32,
+    'fc_dim': 128,
     'bsize': 64,
     'n_classes': 3,
     'pool_type': 'max',
@@ -97,9 +99,15 @@ decay = 0.99
 n_earlystopping=0
 
 # trainf = get_data_path() + 'oqmrc_trainingset_classify.csv'
-trainf = get_data_path() + 'trainingset_classify_filter.csv'
-valf = get_data_path() + 'oqmrc_validationset_classify.csv'
-query_id_train,query_id_val,X_train_passage, X_val_passage, X_train_query, X_val_query, y_train, y_val = load_classifytraindata(trainf, valf)
+# trainf = get_data_path() + 'trainingset_classify_filter.csv'
+# valf = get_data_path() + 'oqmrc_validationset_classify.csv'
+# query_id_train,query_id_val,X_train_passage, X_val_passage, X_train_query, X_val_query, y_train, y_val = load_classifytraindata(trainf, valf)
+
+trainf = get_data_path() + 'oqmrc_trainingset_classify2.csv'
+valf = get_data_path() + 'oqmrc_validationset_classify2.csv'
+query_id_train,query_id_val,X_train_passage, X_val_passage, X_train_query, X_val_query, alternatives_train, alternatives_val = load_classifytraindata2(trainf, valf)
+print alternatives_train.shape
+print alternatives_val.shape
 
 def get_permutation(x):
     index_0=np.argwhere(x==0).flatten()
@@ -137,7 +145,7 @@ def trainepoch(epoch):
 
     s1 = X_train_passage[permutation]
     s2 = X_train_query[permutation]
-    target = y_train[permutation]
+    target = alternatives_train[permutation]
     # print target
 
     optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * decay if epoch>1\
@@ -150,12 +158,14 @@ def trainepoch(epoch):
         s1_batch, s1_len = get_batch(s1[stidx:stidx + params['bsize']], params['word_emb_dim'])
         s2_batch, s2_len = get_batch(s2[stidx:stidx + params['bsize']], params['word_emb_dim'])
 
+        # print s1_batch.size()
         tgt_batch = Variable(
-            torch.LongTensor(target[stidx:stidx + params['bsize']]))
+            torch.from_numpy(target[stidx:stidx + params['bsize']]))
+        # print tgt_batch.size()
         if args.cuda:
             s1_batch, s2_batch = Variable(s1_batch.cuda()), Variable(s2_batch.cuda())
             tgt_batch = Variable(
-                torch.LongTensor(target[stidx:stidx + params['bsize']])).cuda()
+                torch.from_numpy(target[stidx:stidx + params['bsize']])).cuda()
         else:
             s1_batch, s2_batch = Variable(s1_batch), Variable(s2_batch)
 
@@ -164,16 +174,27 @@ def trainepoch(epoch):
         # model forward
         # print(s1_batch.data.shape,s1_len)
         # print(s1_len,s2_len)
-        output = nli_net((s1_batch, s1_len), (s2_batch, s2_len))
+        # output = nli_net((s1_batch, s1_len), (s2_batch, s2_len))
+        output,pred_index = nli_net((s1_batch, s1_len), (s2_batch, s2_len),tgt_batch)
         # print('output.size')
         # print(output.size())
         # print output.data
-        pred = output.data.max(1)[1]
-        correct += pred.long().eq(tgt_batch.data.long()).cpu().sum()
-        assert len(pred) == len(s1[stidx:stidx + params['bsize']])
+
+        correct += (pred_index.cpu().data.numpy()== 0).sum()
+
+        # correct += pred_index.data.long().eq(torch.zeros(pred_index.size()).long()).cpu().sum()
+        # print 'predindex',pred_index.type
+        # print pred_index.data.long().type
+        # print '2',torch.zeros(pred_index.size()).long().type
+
+        # pred = output.data.max(1)[1]
+        # correct += pred.long().eq(tgt_batch.data.long()).cpu().sum()
+        # assert len(pred) == len(s1[stidx:stidx + params['bsize']])
 
         # loss
-        loss = loss_fn(output, tgt_batch)
+        # loss = loss_fn(output, tgt_batch)
+        # for end2end
+        loss = output
         all_costs.append(loss.data[0])
         # the  Use tensor.item() to convert a 0-dim tensor to a Python number
         # all_costs.append(loss.item())
@@ -214,7 +235,7 @@ def trainepoch(epoch):
                            len(all_costs) * params['bsize'] /
                            (time.time() - last_time)),
                        int(words_count * 1.0 / (time.time() - last_time)),
-                       round(100. * correct / (stidx + k), 2)))
+                       round(100 * correct / (stidx + k), 2)))
             print(logs[-1])
             last_time = time.time()
             words_count = 0
@@ -239,26 +260,30 @@ def evaluate(epoch, eval_type='valid', final_eval=False):
     # target = y_train if eval_type == 'valid' else y_val
     s1=X_val_passage
     s2=X_val_query
-    target=y_val
+    target=alternatives_val
 
     for i in range(0, len(s1), params['bsize']):
         # prepare batch
         s1_batch, s1_len = get_batch(s1[i:i + params['bsize']],params['word_emb_dim'])
         s2_batch, s2_len = get_batch(s2[i:i + params['bsize']],params['word_emb_dim'])
 
-        tgt_batch = Variable(torch.LongTensor(target[i:i + params['bsize']]))
+        tgt_batch = Variable(torch.from_numpy(target[i:i + params['bsize']]))
         if args.cuda:
             s1_batch, s2_batch = Variable(s1_batch.cuda()), Variable(s2_batch.cuda())
-            tgt_batch = Variable(torch.LongTensor(target[i:i + params['bsize']])).cuda()
+            tgt_batch = Variable(torch.from_numpy(target[i:i + params['bsize']])).cuda()
         else:
             s1_batch, s2_batch = Variable(s1_batch), Variable(s2_batch)
 
 
         # model forward
-        output = nli_net((s1_batch, s1_len), (s2_batch, s2_len))
+        output,pred_index = nli_net((s1_batch, s1_len), (s2_batch, s2_len),tgt_batch)
 
-        pred = output.data.max(1)[1]
-        correct += pred.long().eq(tgt_batch.data.long()).cpu().sum()
+        # correct += pred_index.data.long().eq(torch.zeros(pred_index.size()).long()).cpu().sum()
+
+        correct += (pred_index.cpu().data.numpy()== 0).sum()
+
+        # pred = output.data.max(1)[1]
+        # correct += pred.long().eq(tgt_batch.data.long()).cpu().sum()
 
     # save model
     eval_acc = round(100 * correct / len(s1), 2)

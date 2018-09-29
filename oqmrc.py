@@ -14,6 +14,7 @@ import xgboost as xgb
 from gensim.models import Word2Vec
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import accuracy_score
+from data import encode_answer,del_commonword
 """
 这个算是结构预测
 解题思路1：分解大法
@@ -35,7 +36,7 @@ from sklearn.metrics import accuracy_score
 
 reload(sys)
 sys.setdefaultencoding('utf-8')
-jieba.load_userdict('./corpus/user_dict.txt')
+jieba.load_userdict('corpus/answer_dict.txt')
 
 
 def get_data_path():
@@ -99,18 +100,18 @@ def get_databasis_sta():
     #         wf.write("{}\t{}\n".format(k, v))
 
 
-def encode_answer(answer):
-    # 备选答案转码
-    no = ['不', '没']
-    notsure = ['无法']
+# def encode_answer(answer):
+#     # 备选答案转码
+#     no = ['不', '没']
+#     notsure = ['无法']
 
-    for ns in notsure:
-        if ns in answer:
-            return 2
-    for n in no:
-        if n in answer:
-            return 0
-    return 1
+#     for ns in notsure:
+#         if ns in answer:
+#             return 2
+#     for n in no:
+#         if n in answer:
+#             return 0
+#     return 1
 
 
 def del_stopwordslist(segs):
@@ -150,7 +151,7 @@ def trans_data(origin_json, classifyf, laterprocessf, corpusf, is_test=False):
                 answer_code = encode_answer(a)
                 dict_alternatives[a] = answer_code
 
-            if len(set(dict_alternatives.values())) == 3 and len(passage)<=350:
+            if len(set(dict_alternatives.values())) == 3:
                 label = dict_alternatives[answer]
                 wf1.write('{}\t{}\t{}\t{}\t{}\n'.format(
                     query_id, label, seg_passage, seg_query,
@@ -163,6 +164,51 @@ def trans_data(origin_json, classifyf, laterprocessf, corpusf, is_test=False):
 
             line = rf.readline()
 
+
+
+# 将数据转换成可训练的格式,加入可选答案
+def trans_data2(origin_json, classifyf, laterprocessf, corpusf, is_test=False):
+    f_train = get_data_path() + origin_json
+    f_train_classify = get_data_path() + classifyf
+    f_train_laterprocess = get_data_path() + laterprocessf
+    f_train_corpus = get_data_path() + corpusf
+    with open(f_train, 'rb') as rf, open(f_train_classify, 'wb') as wf1, open(
+            f_train_laterprocess, 'wb') as wf2, open(f_train_corpus,
+                                                     'wb') as wf3:
+        line = rf.readline()
+        while line:
+            json_line = json.loads(line)
+            passage = json_line['passage'].replace('\t', '')
+            query = json_line['query'].replace('\t', '')
+            answer = json_line['answer'].replace(' ','').replace('\t', '')
+            query_id = json_line['query_id']
+            alternatives =json_line['alternatives'].replace(' ','').replace('\xe3\x80\x80','').decode('utf-8').split('|')
+            # if query_id==24124:
+            #     alternatives=[u'好',u'不是',u'无法确定']
+            #     print alternatives
+            # 如果可选答案为空填充默认值
+            alternatives = ['__NULL__' if len(a)==0 else a for a in alternatives]
+
+            if query_id==24124:
+                print '|'.join(alternatives)
+
+            encode_sent=[encode_answer(w) for w in alternatives]
+            if len(set(encode_sent))==3:
+                alternatives=encode_sent
+            else:
+                alternatives=del_commonword(alternatives)
+
+            seg_passage = ' '.join(del_stopwordslist(jieba.cut(passage)))
+            seg_query = ' '.join(del_stopwordslist(jieba.cut(query)))
+
+            wf1.write('{}\t{}\t{}\t{}\t{}\n'.format(
+                query_id,answer, seg_passage, seg_query, '|'.join(alternatives)))
+
+            wf3.write('{}\n'.format(seg_passage))
+            wf3.write('{}\n'.format(seg_query))
+            wf3.write('{}\n'.format(' '.join(alternatives)))
+
+            line = rf.readline()
 
 # 加载分类训练数据
 def load_classifytraindata(trainf, valf):
@@ -371,7 +417,7 @@ def submit():
 
 
 if __name__ == '__main__':
-    get_databasis_sta()
+    # get_databasis_sta()
     # trans_data('ai_challenger_oqmrc_trainingset.json',
     #            'oqmrc_trainingset_classify.csv',
     #            'oqmrc_trainingset_laterprocess.csv',
@@ -380,4 +426,14 @@ if __name__ == '__main__':
     #            'oqmrc_validationset_classify.csv',
     #            'oqmrc_validationset_laterprocess.csv',
     #            'oqmrc_validationset_corpus.csv')
+
+    trans_data2('ai_challenger_oqmrc_trainingset.json',
+               'oqmrc_trainingset_classify2.csv',
+               'oqmrc_trainingset_laterprocess2.csv',
+               'oqmrc_trainingset_corpus2.csv')
+
+    trans_data2('ai_challenger_oqmrc_validationset.json',
+               'oqmrc_validationset_classify2.csv',
+               'oqmrc_validationset_laterprocess2.csv',
+               'oqmrc_validationset_corpus2.csv')
     # train_combine()

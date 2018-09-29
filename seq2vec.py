@@ -16,9 +16,10 @@ model_file_name = './corpus/w2v.model.bin'
 
 #模型训练，生成词向量
 def train_word2vec():
-    sentences = w2v.LineSentence('./data/all_corpus.csv')
+    # sentences = w2v.LineSentence('./data/all_corpus.csv')
+    sentences = w2v.LineSentence('./data/all_corpus2.csv')
     # sentences = w2v.LineSentence('./data/oqmrc_validationset_corpus.csv')
-    model = w2v.Word2Vec(sentences, size=64, window=5, min_count=1, workers=4)
+    model = w2v.Word2Vec(sentences, size=128, window=5, min_count=1, workers=4)
     word_vectors = model.wv
     word_vectors.save_word2vec_format(model_file_name, binary=True)
 
@@ -43,13 +44,16 @@ def word2vec_seq(seq, word2vec):
 
 
 ## 训练word2vec
-# train_word2vec()
+train_word2vec()
 
-test_seq = [u'着也户', u'PPTTTTTTTTTT','3DMAX2012']
+test_seq = [u'是', u'不是']
 train_w2v = load_word2vec()
 print('train_w2v length is {}'.format(len(train_w2v.vocab)))
 print('train_w2v vector size is {}'.format(train_w2v.vector_size))
 print(word2vec_seq(test_seq, train_w2v))
+sys.exit()
+
+
 
 import numpy as np
 import torch
